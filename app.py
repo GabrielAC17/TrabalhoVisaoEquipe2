@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import cv2
 import time
 import os
+import imutils
 
 print('Loading video')
 cap = cv2.VideoCapture("video4.mp4")
@@ -15,36 +16,51 @@ print('Starting BG subtractor')
 subtractor = cv2.createBackgroundSubtractorKNN()
 element = cv2.getStructuringElement(cv2.MORPH_CROSS, (7, 7))
 
-
-
 def findRectangle(image):
 	FIRST = 0
 	RED = (0, 0, 255)
 	THICKNESS = 3
 	copy = image.copy()
 	ret, thresh = cv2.threshold(copy, 127, 255, 1)
-	countours, _ = cv2.findContours(thresh, 1, 2)
-	largest = None
+	countours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-	maxCnt = -1
 	for contour in countours:
-		approx = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, True), True)
-		if len(approx) > maxCnt:
-			maxCnt = len(approx)
-		if len(approx) == 4:
-			if largest is None or cv2.contourArea(contour) > cv2.contourArea(largest):
-				largest = contour
-				cv2.drawContours(copy, [largest], FIRST, RED, THICKNESS)
+		approx = cv2.convexHull(contour)
+		approx = cv2.approxPolyDP(approx, 0.01 * cv2.arcLength(contour, True), True)
+		#approx = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, True), True)
+		maxAreaCnt = None
+		if (
+			True
+			#(len(approx)> 6) #and
+			#(cv2.contourArea(contour) > 50000.0 and cv2.contourArea(contour) < 80000.0) #and
+			#(maxAreaCnt is None or cv2.contourArea(contour) > maxAreaCnt[1])
+		   ):
+			cv2.drawContours(copy, [approx], FIRST, RED, THICKNESS)
+			maxAreaCnt = [contour, cv2.contourArea(contour)]
 
-	copy = drawInfo(copy, maxCnt)
+	#if maxAreaCnt is not None:
+	#	x, y, w, h = cv2.boundingRect(maxAreaCnt[0])
+	#	return cv2.resize(copy[y:y + h, x:x + w], (640, 300))
+	#	#return copy[y:y + h, x:x + w]
+	#	#cv2.drawContours(copy, maxAreaCnt[0], FIRST, RED, THICKNESS)
 	return copy
 
+def calculateHistogram(image):
+	image2Process = image.copy()
+	hist = cv2.calcHist([image], [0], None, [256], [0,256])
+	hist = hist[200:]
+	countFrames = 0
+	for values in hist:
+		if values > 2000:
+			countFrames += values
+	imageProcessed = drawInfo(image2Process, countFrames)
+	return imageProcessed
 
 def preProcessImage(image):
 	image2Process = image.copy()
 	imageProcessed = cv2.cvtColor(image2Process, cv2.COLOR_BGR2GRAY)
 	imageProcessed = cv2.resize(imageProcessed, (640, 480))
-	imageProcessed = imageProcessed[100:350, 0:640]
+	imageProcessed = imageProcessed[100:400, 0:640]
 	return imageProcessed
 
 def processBackground(image):
@@ -89,39 +105,29 @@ while(True):
 	else:
 		frame = preProcessImage(frame)
 		numWhitePx, frameWBG = processBackground(frame)
-		if(numWhitePx > 10000):
-			#frameWBGThreshold = cv2.adaptiveThreshold(frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 3, 0)
-			#ret, thresh = cv2.threshold(frameWBGThreshold, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-			#rev= 255 - thresh
-			#contours, hierarchy = cv2.findContours(thresh, cv2.RETR_LIST ,cv2.CHAIN_APPROX_SIMPLE)
-			#_, threshold = cv2.threshold(frame, 240, 255, cv2.THRESH_BINARY)
-			#_, contours = cv2.findContours(threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-			#min_rect_len = 80
-			#max_rect_len = 120
+		if(numWhitePx > 600):
+			# frameWBG = findRectangle(frame)
+			# frameWBG = calculateHistogram(frame)
 
-			#contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
-			#biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
-			#cv2.drawContours(frame, [biggest_contour], -1, (255), -1)
-			#for cnt in contours:
-				#approx = cv2.approxPolyDP(cnt, 0.01 * cv2.arcLength(cnt, True), True)
-				#cv2.drawContours(frame, [aprox], 0, (0), 5)
-				#(x, y, w, h) = cv2.boundingRect(contour)
-				#rect = frame[y:y+h, x:x+w]
-				#tam = len(rect[rect > 200])
-				#if (
-				#   h > min_rect_len and
-				#   w > min_rect_len and
-				#   h < max_rect_len and
-				#   w < max_rect_len and
-				#   tam > 180 and tam < 250
-				#):
-				#	cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 1)
-				#	cv2.putText(frame, "L: " + str(tam), (x, y + h + 5), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), lineType=cv2.LINE_AA) 
-				#	#cv2.putText(frame, "W: " + str(w) + " - H: " + str(h), (x, y + h + 5), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), lineType=cv2.LINE_AA) 
-			frameWBG = findRectangle(frame)
+			frameWBG = frame.copy()
+			#edged = cv2.Canny(frame, 50, 100)
+			edged = frame.copy()
+			_, thresh = cv2.threshold(edged, 127, 255, 1)
+			dilate = cv2.dilate(thresh, None)
+			erode = cv2.erode(dilate, None)
+			erode = cv2.bitwise_not(erode)
+
+			cnts, _ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+			for c in cnts:
+				(x, y, w, h) = cv2.boundingRect(c)
+				if w > 50 and w < 150 and h > 50 and h < 150:
+					#cv2.drawContours(frameWBG, [c], -1, 0, -1)
+					cv2.rectangle(frameWBG, (x, x + w), (y, y + h), (255, 0, 0), 1)
+			frame = erode
 
 		frame = drawInfo(frame, numWhitePx)
-		numpy_horizontal = np.hstack((frame, frameWBG))
+
+		numpy_horizontal = np.vstack((frame, frameWBG))
 		cv2.imshow('Frames', numpy_horizontal)
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 			break
