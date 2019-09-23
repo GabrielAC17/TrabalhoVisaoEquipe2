@@ -103,4 +103,7 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-*.mp4
+720p.mp4
+1080p.mp4
+videovisaoconvertido.mp4
+.DS_Store
