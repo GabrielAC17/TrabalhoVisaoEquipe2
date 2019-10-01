@@ -3,7 +3,7 @@ import cv2
 import time
 import os
 
-cap = cv2.VideoCapture("video/720p.mp4")
+cap = cv2.VideoCapture("video/furto3-720p.mp4")
 
 
 def draw(img):
@@ -30,7 +30,7 @@ def draw(img):
                     print((x, y, w, h))
 
     cv2.imshow("shapes", img)
-    cv2.imshow("shapes2", dilate)
+    #cv2.imshow("shapes2", dilate)
 
 
 while(True):

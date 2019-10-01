@@ -4,9 +4,11 @@ import cv2
 import time
 import os
 import imutils
+from statistics import mean
 
 print('Loading video')
-cap = cv2.VideoCapture("video4.mp4")
+#cap = cv2.VideoCapture("video4.mp4")
+cap = cv2.VideoCapture("./git/itamar/video/furto1-720p.mp4")
 
 print('Loading cascades')
 hog = cv2.HOGDescriptor()
@@ -16,13 +18,11 @@ print('Starting BG subtractor')
 subtractor = cv2.createBackgroundSubtractorKNN()
 element = cv2.getStructuringElement(cv2.MORPH_CROSS, (7, 7))
 
+plt.ion()
+plt.show()
+
 def removalNotDarkColor(image):
 	image2Process = image.copy()
-	#lower_black = np.array([15, 15, 15], dtype='uint16')
-	#upper_black = np.array([120, 120, 120], dtype='uint16')
-	#imageProcessed = cv2.inRange(image2Process, lower_black, upper_black)
-	#imageProcessed = cv2.erode(imageProcessed, element)
-	#imageProcessed = cv2.dilate(imageProcessed, element)
 
 	lower_black = np.array([0, 0, 0], dtype='uint16')
 	upper_black = np.array([255, 40, 140], dtype='uint16')
@@ -32,32 +32,57 @@ def removalNotDarkColor(image):
 	#imageProcessed = cv2.dilate(imageProcessed, element)
 	return imageProcessed
 
-def findRectangle(image):
+def findRectangle(image, imageNotProcessed):
 	cnts = []
 	copy = image.copy()
-	copy = cv2.Canny(copy, 50, 100)
-	ret, thresh = cv2.threshold(copy, 127, 255, 1)
-	countours, _ = cv2.findContours(thresh, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
-	for contour in countours:
+	copy = cv2.bilateralFilter(copy, 11, 17, 17)
+	#copy = cv2.Canny(copy, 50, 255)
+	ret, thresh = cv2.threshold(copy, 50, 255, cv2.THRESH_BINARY)
+	contours, hierarchy = cv2.findContours(copy, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+	#countours = sorted(countours, key = cv2.contourArea, reverse = True)[:10]
+
+	hull = []
+	for contour in contours:
+		area = cv2.contourArea(contour)
+		if (
+			(area > 1000.0 and area < 8000.0)
+		):
+			rect = cv2.boundingRect(contour)
+
+			x, y, w, h = rect
+			roi = imageNotProcessed[x:x + w, y:y + h]
+			roi = cv2.equalizeHist(roi)
+			hist = cv2.calcHist([roi], [0], None, [256], [0, 256])
+			nPxDarkness = sum(hist[250:])
+			nPxTotal = sum(hist)
+			if nPxTotal > 0:
+				avg = sum(hist[230:]) / float(len(hist[230:]))
+				percentPxDarkness = (nPxDarkness / nPxTotal) * 100
+				if avg > 50:
+					#print(str(nPxDarkness) + ' / ' + str(nPxTotal) + ' = ' + str(percentPxDarkness) + '%')
+					print('Average: ' + str(avg))
+					hull.append(cv2.convexHull(contour, False))
+					cv2.imwrite('teste.png', roi)
+	return hull, hierarchy
+
+	for contour in contours:
 		approx = cv2.convexHull(contour)
 		approx = cv2.approxPolyDP(approx, 0.015 * cv2.arcLength(contour, True), True)
 		if (
-			(len(approx) > 4) and (len(approx) < 10) #and
-			#(cv2.contourArea(contour) > 20000.0 and cv2.contourArea(contour) < 80000.0)
+			#(len(approx) >= 4) and (len(approx) < 10) and
+			(cv2.contourArea(contour) > 1.0 and cv2.contourArea(contour) < 2.0)
 		   ):
 			cnts.append(approx)
 
 	return cnts
 
-def drawCnt(image, cnt):
-	FIRST = 0
+def drawCnt(image, cnts, hierarchy):
 	RED = (0, 0, 255)
 	THICKNESS = 3
 	image2Process = image.copy()
-	#approx = cv2.convexHull(contour)
-	#approx = cv2.approxPolyDP(approx, 0.02 * cv2.arcLength(contour, True), True)
-	cv2.drawContours(image2Process, [cnt], FIRST, RED, THICKNESS)
+	for i, cnt in enumerate(cnts):
+		cv2.drawContours(image2Process, cnts, i, RED, THICKNESS, 8)
 	return image2Process
 
 def calculateHistogram(image):
@@ -102,17 +127,6 @@ def drawInfo(image, info):
 	cv2.putText(imageProcessed, str(info), (10, image.shape[0] - 20), font, 1, (255, 255, 255), 1, cv2.LINE_AA)
 	return imageProcessed
 
-params = cv2.SimpleBlobDetector_Params()
-params.filterByCircularity = True
-params.minCircularity = 0.7
-params.maxCircularity = 0.8
-params.filterByArea = 1
-params.minArea = 300
-params.maxArea = 2000
-params.filterByColor = 1
-params.blobColor = 0
-detector = cv2.SimpleBlobDetector_create(params)
-
 print('Starting read')
 while(True):
 	ret, frameOriginal = cap.read()
@@ -122,38 +136,23 @@ while(True):
 	else:
 		notGray = preProcessImage(frameOriginal, False)
 		frame = preProcessImage(frameOriginal)
+		cv2.rectangle(frame, (84, 0), (153, 84), (255, 255, 255), -1)
+		cv2.rectangle(notGray, (84, 0), (153, 84), (255, 255, 255), -1)
 		numWhitePx, frameWBG = processBackground(frame)
 		if(numWhitePx > 600):
 			frameWBG = removalNotDarkColor(notGray)
 			frameWBG = (255 - frameWBG)
 
-			cnts = findRectangle(frameWBG)
-			frameWBG = frame
-			for cnt in cnts:
-				frameWBG = drawCnt(frameWBG, cnt)
-			frameWBG = cv2.cvtColor(frameWBG, cv2.COLOR_GRAY2BGR)
-			# frameWBG = calculateHistogram(frame)
+			cnts, hierarchy = findRectangle(frameWBG, frame)
+			if cnts and len(cnts) > 0:
+				frameWBG = drawCnt(frame, cnts, hierarchy)
+			else:
+				frameWBG = frame
 
-			#frameWBG = frame.copy()
-			##edged = cv2.Canny(frame, 50, 100)
-			#edged = frame.copy()
-			#_, thresh = cv2.threshold(edged, 127, 255, 1)
-			#dilate = cv2.dilate(thresh, None)
-			#erode = cv2.erode(dilate, None)
-			#erode = cv2.bitwise_not(erode)
-
-			#cnts, _ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-			#for c in cnts:
-			#	(x, y, w, h) = cv2.boundingRect(c)
-			#	if w > 50 and w < 150 and h > 50 and h < 150:
-			#		#cv2.drawContours(frameWBG, [c], -1, 0, -1)
-			#		cv2.rectangle(frameWBG, (x, x + w), (y, y + h), (255, 0, 0), 1)
-			#frame = erode
-		else:
-			frameWBG = cv2.cvtColor(frameWBG, cv2.COLOR_GRAY2BGR)
-
-		frame = drawInfo(frame, numWhitePx)
-		frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+		#frame = drawInfo(frame, numWhitePx)
+		#frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+		frame = cv2.cvtColor(notGray, cv2.COLOR_BGR2HSV)
+		frameWBG = cv2.cvtColor(frameWBG, cv2.COLOR_GRAY2BGR)
 
 		numpy_horizontal = np.vstack((frame, frameWBG))
 		cv2.imshow('Frames', numpy_horizontal)
