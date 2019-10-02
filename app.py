@@ -1,25 +1,24 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import cv2
-import time
-import os
-import imutils
-from statistics import mean
+import cv2, os, time
+from datetime import datetime
 
-print('Loading video')
-#cap = cv2.VideoCapture("video4.mp4")
-cap = cv2.VideoCapture("./git/itamar/video/furto1-720p.mp4")
+def printWP(message):
+	print(datetime.now().strftime("%x") + ' - ' + datetime.now().strftime("%X") + ' | ' + message)
 
-print('Loading cascades')
+# videoPath = "video4.mp4"
+# videoPath = "./TrabalhoVisaoEquipe2/itamar/video/furto2-720p.mp4"
+videoPath = "./1080p.mp4"
+
+printWP('Loading video')
+cap = cv2.VideoCapture(videoPath)
+
+printWP('Loading cascades')
 hog = cv2.HOGDescriptor()
 hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
-print('Starting BG subtractor')
+printWP('Starting BG subtractor')
 subtractor = cv2.createBackgroundSubtractorKNN()
 element = cv2.getStructuringElement(cv2.MORPH_CROSS, (7, 7))
-
-plt.ion()
-plt.show()
 
 def removalNotDarkColor(image):
 	image2Process = image.copy()
@@ -61,9 +60,7 @@ def findRectangle(image, imageNotProcessed):
 				percentPxDarkness = (nPxDarkness / nPxTotal) * 100
 				if avg > 50:
 					#print(str(nPxDarkness) + ' / ' + str(nPxTotal) + ' = ' + str(percentPxDarkness) + '%')
-					print('Average: ' + str(avg))
 					hull.append(cv2.convexHull(contour, False))
-					cv2.imwrite('teste.png', roi)
 	return hull, hierarchy
 
 	for contour in contours:
@@ -127,40 +124,49 @@ def drawInfo(image, info):
 	cv2.putText(imageProcessed, str(info), (10, image.shape[0] - 20), font, 1, (255, 255, 255), 1, cv2.LINE_AA)
 	return imageProcessed
 
-print('Starting read')
+startTime = datetime.now()
+printWP('Iniciando leitura do arquivo: ' + videoPath)
 while(True):
-	ret, frameOriginal = cap.read()
-	if frameOriginal is None:
-		print('Read frame fail!')
-		time.sleep(.5)
-	else:
-		notGray = preProcessImage(frameOriginal, False)
-		frame = preProcessImage(frameOriginal)
-		cv2.rectangle(frame, (84, 0), (153, 84), (255, 255, 255), -1)
-		cv2.rectangle(notGray, (84, 0), (153, 84), (255, 255, 255), -1)
-		numWhitePx, frameWBG = processBackground(frame)
-		if(numWhitePx > 600):
-			frameWBG = removalNotDarkColor(notGray)
-			frameWBG = (255 - frameWBG)
-
-			cnts, hierarchy = findRectangle(frameWBG, frame)
-			if cnts and len(cnts) > 0:
-				frameWBG = drawCnt(frame, cnts, hierarchy)
-			else:
-				frameWBG = frame
-
-		#frame = drawInfo(frame, numWhitePx)
-		#frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-		frame = cv2.cvtColor(notGray, cv2.COLOR_BGR2HSV)
-		frameWBG = cv2.cvtColor(frameWBG, cv2.COLOR_GRAY2BGR)
-
-		numpy_horizontal = np.vstack((frame, frameWBG))
-		cv2.imshow('Frames', numpy_horizontal)
-		if cv2.waitKey(1) & 0xFF == ord('q'):
+	try:
+		ret, frameOriginal = cap.read()
+		if frameOriginal is None:
+			printWP('Fim do vídeo!')
 			break
-		if cv2.waitKey(1) & 0xFF == ord('s'):
-			cv2.imwrite('back-open.jpg', frame)
-			print("Saved!")
+			time.sleep(.5)
+		else:
+			notGray = preProcessImage(frameOriginal, False)
+			frame = preProcessImage(frameOriginal)
+			cv2.rectangle(frame, (84, 0), (153, 84), (255, 255, 255), -1)
+			cv2.rectangle(notGray, (84, 0), (153, 84), (255, 255, 255), -1)
+			numWhitePx, frameWBG = processBackground(frame)
+			if(numWhitePx > 600):
+				frameWBG = removalNotDarkColor(notGray)
+				frameWBG = (255 - frameWBG)
+
+				cnts, hierarchy = findRectangle(frameWBG, frame)
+				if cnts and len(cnts) > 0:
+					frameWBG = drawCnt(frame, cnts, hierarchy)
+					elapsed = datetime.now() - startTime
+					printWP('Detectado PC Roubado: ' + str(elapsed))
+				else:
+					frameWBG = frame
+
+			#frame = drawInfo(frame, numWhitePx)
+			#frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+			frame = cv2.cvtColor(notGray, cv2.COLOR_BGR2HSV)
+			frameWBG = cv2.cvtColor(frameWBG, cv2.COLOR_GRAY2BGR)
+
+			numpy_horizontal = np.vstack((frame, frameWBG))
+			#cv2.imshow('Frames', numpy_horizontal)
+			#if cv2.waitKey(1) & 0xFF == ord('q'):
+			#	break
+			#if cv2.waitKey(1) & 0xFF == ord('s'):
+			#	cv2.imwrite('back-open.jpg', frame)
+			#	print("Saved!")
+	except Exception as e:
+		print('Erro: ' + repr(e))
+		break
 
 cap.release()
 cv2.destroyAllWindows()
+
